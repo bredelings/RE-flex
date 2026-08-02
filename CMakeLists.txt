@@ -27,12 +27,8 @@ set(libreflex_common_sources
   lib/error.cpp
   lib/input.cpp
   lib/matcher.cpp
-  lib/matcher_avx2.cpp
-  lib/matcher_avx512bw.cpp
   lib/pattern.cpp
   lib/simd.cpp
-  lib/simd_avx2.cpp
-  lib/simd_avx512bw.cpp
   lib/utf8.cpp
 )
 
@@ -56,6 +52,36 @@ set(bin_sources
   src/reflex.cpp
 )
 
+set(reflex_simd_objects "")
+
+# These noninstalled PIC objects keep AVX2 instructions out of the baseline
+# sources while allowing all static and shared libraries to reuse one build.
+if(REFLEX_COMPILER_HAS_AVX2)
+  add_library(ReflexAvx2Objects OBJECT
+    lib/matcher_avx2.cpp
+    lib/simd_avx2.cpp
+  )
+  set_target_properties(ReflexAvx2Objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(ReflexAvx2Objects PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_compile_definitions(ReflexAvx2Objects PRIVATE ${simd_definitions})
+  target_compile_options(ReflexAvx2Objects PRIVATE ${simd_avx2_flags})
+  list(APPEND reflex_simd_objects $<TARGET_OBJECTS:ReflexAvx2Objects>)
+endif()
+
+# AVX512BW needs a distinct compiler option and uses the AVX2 objects above as
+# its runtime fallback, so it is a separate private object target as well.
+if(REFLEX_COMPILER_HAS_AVX512BW)
+  add_library(ReflexAvx512bwObjects OBJECT
+    lib/matcher_avx512bw.cpp
+    lib/simd_avx512bw.cpp
+  )
+  set_target_properties(ReflexAvx512bwObjects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(ReflexAvx512bwObjects PRIVATE ${PROJECT_SOURCE_DIR}/include)
+  target_compile_definitions(ReflexAvx512bwObjects PRIVATE ${simd_definitions})
+  target_compile_options(ReflexAvx512bwObjects PRIVATE ${simd_avx512bw_flags})
+  list(APPEND reflex_simd_objects $<TARGET_OBJECTS:ReflexAvx512bwObjects>)
+endif()
+
 #
 # Defining targets section
 #
@@ -77,11 +103,11 @@ else()
 endif()
 
 foreach(target IN LISTS reflex_library_targets)
-  target_sources(${target} PRIVATE ${libreflex_sources})
+  target_sources(${target} PRIVATE ${libreflex_sources} ${reflex_simd_objects})
 endforeach()
 
 foreach(target IN LISTS reflexmin_library_targets)
-  target_sources(${target} PRIVATE ${libreflexmin_sources})
+  target_sources(${target} PRIVATE ${libreflexmin_sources} ${reflex_simd_objects})
 endforeach()
 
 set(reflex_all_library_targets
