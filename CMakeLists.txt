@@ -6,15 +6,23 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 set(CMAKE_CXX_STANDARD 11)
 
-# The following setups the simd_* variables
+include(GNUInstallDirs)
+
+# Clang-cl uses MSVC command-line and binary interfaces despite having a
+# different compiler ID.  Treat both toolchains alike when selecting targets.
+set(REFLEX_MSVC_TOOLCHAIN FALSE)
+if(MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+  set(REFLEX_MSVC_TOOLCHAIN TRUE)
+endif()
+
+# The following sets up the simd_* variables.
 include(SIMDTestAndSetup)
 
 #
 # Defining source variables
 #
 
-set(lib_sources
-  lib/convert.cpp
+set(libreflex_common_sources
   lib/debug.cpp
   lib/error.cpp
   lib/input.cpp
@@ -22,13 +30,17 @@ set(lib_sources
   lib/matcher_avx2.cpp
   lib/matcher_avx512bw.cpp
   lib/pattern.cpp
-  lib/posix.cpp
   lib/simd.cpp
   lib/simd_avx2.cpp
   lib/simd_avx512bw.cpp
-  lib/unicode.cpp
   lib/utf8.cpp
+)
 
+set(libreflex_sources
+  ${libreflex_common_sources}
+  lib/convert.cpp
+  lib/posix.cpp
+  lib/unicode.cpp
   unicode/block_scripts.cpp
   unicode/language_scripts.cpp
   unicode/letter_scripts.cpp
@@ -36,53 +48,80 @@ set(lib_sources
   unicode/composer.cpp
 )
 
+set(libreflexmin_sources
+  ${libreflex_common_sources}
+)
+
 set(bin_sources
   src/reflex.cpp
 )
-
-list(TRANSFORM lib_sources PREPEND ${PROJECT_SOURCE_DIR}/)
-list(TRANSFORM bin_sources PREPEND ${PROJECT_SOURCE_DIR}/)
 
 #
 # Defining targets section
 #
 
-add_library(ReflexLib SHARED "")
-target_sources(ReflexLib PRIVATE ${lib_sources})
-target_include_directories(ReflexLib PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_compile_definitions(ReflexLib PRIVATE ${simd_definitions})
-target_compile_options(ReflexLib PRIVATE ${simd_flags})
+# The public headers do not declare symbols with dllexport/dllimport, so an
+# MSVC-style toolchain can only produce usable static libraries at present.
+if(REFLEX_MSVC_TOOLCHAIN)
+  add_library(ReflexLib STATIC)
+  add_library(ReflexMinLib STATIC)
+  set(reflex_library_targets ReflexLib)
+  set(reflexmin_library_targets ReflexMinLib)
+else()
+  add_library(ReflexLib SHARED)
+  add_library(ReflexLibStatic STATIC)
+  add_library(ReflexMinLib SHARED)
+  add_library(ReflexMinLibStatic STATIC)
+  set(reflex_library_targets ReflexLib ReflexLibStatic)
+  set(reflexmin_library_targets ReflexMinLib ReflexMinLibStatic)
+endif()
 
-add_library(ReflexLibStatic STATIC "")
-target_sources(ReflexLibStatic PRIVATE ${lib_sources})
-target_include_directories(ReflexLibStatic PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_compile_definitions(ReflexLibStatic PRIVATE ${simd_definitions})
-target_compile_options(ReflexLibStatic PRIVATE ${simd_flags})
+foreach(target IN LISTS reflex_library_targets)
+  target_sources(${target} PRIVATE ${libreflex_sources})
+endforeach()
 
-add_executable(Reflex "")
-target_sources(Reflex PRIVATE ${bin_sources})
-target_link_libraries(Reflex PRIVATE ReflexLibStatic)
+foreach(target IN LISTS reflexmin_library_targets)
+  target_sources(${target} PRIVATE ${libreflexmin_sources})
+endforeach()
+
+set(reflex_all_library_targets
+  ${reflex_library_targets}
+  ${reflexmin_library_targets}
+)
+
+foreach(target IN LISTS reflex_all_library_targets)
+  target_include_directories(${target} PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  )
+  target_compile_definitions(${target} PRIVATE ${simd_definitions})
+  target_compile_options(${target} PRIVATE ${simd_flags})
+endforeach()
+
+add_executable(Reflex ${bin_sources})
+if(TARGET ReflexLibStatic)
+  target_link_libraries(Reflex PRIVATE ReflexLibStatic)
+else()
+  target_link_libraries(Reflex PRIVATE ReflexLib)
+endif()
 target_compile_definitions(Reflex PRIVATE ${simd_definitions})
 target_compile_options(Reflex PRIVATE ${simd_flags})
 
-# Don't user target name as filename instead use lowercase name for backwards compatibility
-set_target_properties(ReflexLibStatic PROPERTIES OUTPUT_NAME reflex_static_lib)
-set_target_properties(ReflexLib PROPERTIES OUTPUT_NAME reflex_shared_lib)
+foreach(target IN LISTS reflex_library_targets)
+  set_target_properties(${target} PROPERTIES OUTPUT_NAME reflex)
+endforeach()
+
+foreach(target IN LISTS reflexmin_library_targets)
+  set_target_properties(${target} PROPERTIES OUTPUT_NAME reflexmin)
+endforeach()
+
 set_target_properties(Reflex PROPERTIES OUTPUT_NAME reflex)
 
 #
 # Exporting targets section
 #
 
-include(GNUInstallDirs)
-
-install(TARGETS Reflex ReflexLib ReflexLibStatic
+install(TARGETS Reflex ${reflex_all_library_targets}
   EXPORT ReflexTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -122,7 +161,6 @@ install(FILES
 
 set(prefix "${CMAKE_INSTALL_PREFIX}")
 set(exec_prefix "\${prefix}")
-set(REFLEX_PKGCONFIG_LIBRARY "reflex_shared_lib")
 
 if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
   set(libdir "${CMAKE_INSTALL_LIBDIR}")
@@ -136,14 +174,20 @@ else()
   set(includedir "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
-# Compatibility note: CMake currently installs libreflex_shared_lib rather than
-# libreflex, so its pkg-config file must use the CMake library name.
+set(REFLEX_PKGCONFIG_LIBRARY reflex)
 configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
   "${CMAKE_CURRENT_BINARY_DIR}/reflex.pc"
   @ONLY
 )
 
+set(REFLEX_PKGCONFIG_LIBRARY reflexmin)
+configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
+  "${CMAKE_CURRENT_BINARY_DIR}/reflexmin.pc"
+  @ONLY
+)
+
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/reflex.pc"
+  "${CMAKE_CURRENT_BINARY_DIR}/reflexmin.pc"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
