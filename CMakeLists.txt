@@ -193,8 +193,17 @@ configure_package_config_file(${PROJECT_SOURCE_DIR}/cmake/Config.cmake.in
   INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/reflex
 )
 
+# Do not promise compatibility between releases until the project defines an
+# explicit C++ API and ABI compatibility policy.
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/ReflexConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY ExactVersion
+)
+
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/ReflexConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/ReflexConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/reflex
 )
 
