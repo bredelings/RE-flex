@@ -53,11 +53,6 @@ set(libreflexmin_sources
   ${libreflex_common_sources}
 )
 
-# The reflex scanner generator itself is built from a single translation unit.
-set(bin_sources
-  src/reflex.cpp
-)
-
 # Collect optional optimized objects for reuse by every library variant.
 set(reflex_simd_objects "")
 
@@ -135,7 +130,7 @@ endforeach()
 
 # Link the generator to the static full library where it has a distinct target;
 # on MSVC-style toolchains ReflexLib is already the static library.
-add_executable(Reflex ${bin_sources})
+add_executable(Reflex src/reflex.cpp)
 if(TARGET ReflexLibStatic)
   target_link_libraries(Reflex PRIVATE ReflexLibStatic)
 else()
