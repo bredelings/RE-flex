@@ -1,0 +1,124 @@
+name: C/C++ CMake CI
+
+on:
+  push:
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            os: ubuntu-latest
+            arch: x86_64
+            target: native
+            cmake_args: ""
+          - name: Linux GCC (no SSE2/AVX2)
+            os: ubuntu-latest
+            arch: x86_64
+            target: native
+            cmake_args: "-DUSE_SSE2=OFF -DUSE_AVX2=OFF"
+          - name: Linux ARM GCC
+            os: ubuntu-24.04-arm
+            arch: aarch64
+            target: native
+            cmake_args: ""
+          - name: Linux ARM GCC (no NEON)
+            os: ubuntu-24.04-arm
+            arch: aarch64
+            target: native
+            cmake_args: "-DUSE_NEON=OFF"
+          - name: Windows MinGW
+            os: windows-latest
+            arch: x86_64
+            target: native
+            cmake_args: ""
+          - name: Windows cross (MinGW)
+            os: ubuntu-latest
+            arch: x86_64
+            target: windows-cross
+            cmake_args: ""
+          - name: macOS ARM Clang
+            os: macos-latest
+            arch: arm64
+            target: native
+            cmake_args: ""
+
+    steps:
+      - name: Configure Windows line endings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v6
+
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Install Windows cross tools
+        if: matrix.target == 'windows-cross'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes mingw-w64 wine
+
+      - name: Build and test
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          uname -a
+          c++ --version
+          cmake --version
+          if test "${{ matrix.target }}" = "windows-cross"; then
+            cmake -S . -B build \
+              -DCMAKE_SYSTEM_NAME=Windows \
+              -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
+              -DCMAKE_CROSSCOMPILING_EMULATOR=wine \
+              -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+              ${{ matrix.cmake_args }}
+          else
+            cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
+              ${{ matrix.cmake_args }}
+          fi
+          cmake --build build --parallel 2
+          if test "${{ matrix.target }}" = "windows-cross"; then
+            WINEARCH=win64 WINEDEBUG=-all WINEPREFIX="$RUNNER_TEMP/wine" \
+              ctest --test-dir build --output-on-failure
+          else
+            ctest --test-dir build --output-on-failure
+          fi
+          cmake --install build --prefix "$RUNNER_TEMP/reflex-install"
+
+      - name: Build and test
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          uname -a
+          c++ --version
+          cmake --version
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            ${{ matrix.cmake_args }}
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure
+          cmake --install build --prefix "$RUNNER_TEMP/reflex-install"
