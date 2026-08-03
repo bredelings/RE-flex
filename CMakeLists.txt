@@ -217,16 +217,14 @@ else()
   set(includedir "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
-# Generate metadata for both libraries from one template, substituting the
-# appropriate library basename into each output file.
-set(REFLEX_PKGCONFIG_LIBRARY reflex)
-configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
+# Reuse the Autotools templates, which expect the project version in VERSION.
+set(VERSION "${PROJECT_VERSION}")
+configure_file(${PROJECT_SOURCE_DIR}/reflex.pc.in
   "${CMAKE_CURRENT_BINARY_DIR}/reflex.pc"
   @ONLY
 )
 
-set(REFLEX_PKGCONFIG_LIBRARY reflexmin)
-configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
+configure_file(${PROJECT_SOURCE_DIR}/reflexmin.pc.in
   "${CMAKE_CURRENT_BINARY_DIR}/reflexmin.pc"
   @ONLY
 )
