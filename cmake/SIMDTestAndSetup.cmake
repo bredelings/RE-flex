@@ -1,14 +1,19 @@
 # Test whether the compiler accepts each SIMD implementation with its required
 # options.  The resulting variables configure baseline and specialized targets.
 
+# These modules provide compile probes and isolate their temporary flags from
+# the rest of the project configuration.
 include(CheckCXXSourceCompiles)
 include(CMakePushCheckState)
 
+# Options let packagers disable a backend; an enabled backend must still pass
+# its compiler probe before it is built.
 option(USE_AVX512BW "Enable AVX512BW intrinsics (if available)" ON)
 option(USE_AVX2 "Enable AVX2 intrinsics (if available)" ON)
 option(USE_SSE2 "Enable SSE2 intrinsics (if available)" ON)
 option(USE_NEON "Enable NEON intrinsics (if available)" ON)
 
+# Select the SIMD option spelling understood by the active compiler interface.
 if(REFLEX_MSVC_TOOLCHAIN)
   set(reflex_sse2_flag "/arch:SSE2")
   set(reflex_avx2_flag "/arch:AVX2")
@@ -19,6 +24,8 @@ else()
   set(reflex_avx512bw_flag "-mavx512bw")
 endif()
 
+# Compile rather than run the probe so configuration also works when the build
+# machine cannot execute binaries for the target architecture.
 if(USE_SSE2)
   cmake_push_check_state(RESET)
   set(CMAKE_REQUIRED_FLAGS "${reflex_sse2_flag}")
@@ -68,6 +75,8 @@ else()
   set(REFLEX_COMPILER_HAS_AVX512BW FALSE)
 endif()
 
+# Probe NEON only when no x86 backend is available.  AArch64 needs no extra
+# option, while some 32-bit ARM compilers require -mfpu=neon.
 if(USE_NEON AND NOT REFLEX_COMPILER_HAS_SSE2)
   cmake_push_check_state(RESET)
   check_cxx_source_compiles("
@@ -98,11 +107,14 @@ else()
   set(REFLEX_COMPILER_HAS_NEON_WITH_FLAG FALSE)
 endif()
 
+# These lists are consumed by the parent CMakeLists.txt when it defines targets.
 set(simd_definitions "")
 set(simd_flags "")
 set(simd_avx2_flags "")
 set(simd_avx512bw_flags "")
 
+# Define only the strongest backend macro.  Baseline targets stay at SSE2 while
+# private AVX object targets receive the flags for their specialized code.
 if(REFLEX_COMPILER_HAS_AVX512BW)
   list(APPEND simd_definitions HAVE_AVX512BW)
   list(APPEND simd_flags "${reflex_sse2_flag}")

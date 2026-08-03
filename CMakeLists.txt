@@ -2,10 +2,14 @@ cmake_minimum_required(VERSION 3.15)
 
 project(reflex VERSION 6.3.0 LANGUAGES CXX)
 
+# Make the project-specific modules under cmake/ available to include().
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+# Ask CMake to compile all targets as C++11.
 set(CMAKE_CXX_STANDARD 11)
 
+# GNUInstallDirs supplies portable install paths, while CTest defines the
+# BUILD_TESTING option and enables test registration when requested.
 include(GNUInstallDirs)
 include(CTest)
 
@@ -19,10 +23,8 @@ endif()
 # The following sets up the simd_* variables.
 include(SIMDTestAndSetup)
 
-#
-# Defining source variables
-#
-
+# Keep the matcher implementation shared by the full and minimal libraries in
+# one list so the two variants do not drift apart.
 set(libreflex_common_sources
   lib/debug.cpp
   lib/error.cpp
@@ -33,6 +35,7 @@ set(libreflex_common_sources
   lib/utf8.cpp
 )
 
+# The full library adds pattern conversion, POSIX support, and Unicode tables.
 set(libreflex_sources
   ${libreflex_common_sources}
   lib/convert.cpp
@@ -45,14 +48,17 @@ set(libreflex_sources
   unicode/composer.cpp
 )
 
+# The minimal library contains only the runtime needed by generated scanners.
 set(libreflexmin_sources
   ${libreflex_common_sources}
 )
 
+# The reflex scanner generator itself is built from a single translation unit.
 set(bin_sources
   src/reflex.cpp
 )
 
+# Collect optional optimized objects for reuse by every library variant.
 set(reflex_simd_objects "")
 
 # These noninstalled PIC objects keep AVX2 instructions out of the baseline
@@ -83,10 +89,7 @@ if(REFLEX_COMPILER_HAS_AVX512BW)
   list(APPEND reflex_simd_objects $<TARGET_OBJECTS:ReflexAvx512bwObjects>)
 endif()
 
-#
-# Defining targets section
-#
-
+# Define the available static and shared library targets for this toolchain.
 # The public headers do not declare symbols with dllexport/dllimport, so an
 # MSVC-style toolchain can only produce usable static libraries at present.
 if(REFLEX_MSVC_TOOLCHAIN)
@@ -103,19 +106,24 @@ else()
   set(reflexmin_library_targets ReflexMinLib ReflexMinLibStatic)
 endif()
 
+# Set the source files contained in each full-library target.
 foreach(target IN LISTS reflex_library_targets)
   target_sources(${target} PRIVATE ${libreflex_sources} ${reflex_simd_objects})
 endforeach()
 
+# Set the smaller source set contained in each minimal-library target.
 foreach(target IN LISTS reflexmin_library_targets)
   target_sources(${target} PRIVATE ${libreflexmin_sources} ${reflex_simd_objects})
 endforeach()
 
+# Gather all library targets so their common build settings remain identical.
 set(reflex_all_library_targets
   ${reflex_library_targets}
   ${reflexmin_library_targets}
 )
 
+# Use source-tree headers while building and installed headers for consumers;
+# SIMD definitions and options remain private implementation details.
 foreach(target IN LISTS reflex_all_library_targets)
   target_include_directories(${target} PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -125,15 +133,22 @@ foreach(target IN LISTS reflex_all_library_targets)
   target_compile_options(${target} PRIVATE ${simd_flags})
 endforeach()
 
+# Link the generator to the static full library where it has a distinct target;
+# on MSVC-style toolchains ReflexLib is already the static library.
 add_executable(Reflex ${bin_sources})
 if(TARGET ReflexLibStatic)
   target_link_libraries(Reflex PRIVATE ReflexLibStatic)
 else()
   target_link_libraries(Reflex PRIVATE ReflexLib)
 endif()
+
+# The generator includes SIMD-aware public headers, so use the same baseline
+# definitions and compiler options as the library implementation.
 target_compile_definitions(Reflex PRIVATE ${simd_definitions})
 target_compile_options(Reflex PRIVATE ${simd_flags})
 
+# CTest defines BUILD_TESTING; when enabled, build and register the same rtest
+# regression executable used by the Autotools build.
 if(BUILD_TESTING)
   add_executable(rtest tests/rtest.cpp)
   if(TARGET ReflexLibStatic)
@@ -146,6 +161,8 @@ if(BUILD_TESTING)
   add_test(NAME rtest COMMAND rtest)
 endif()
 
+# Target names are internal to CMake; give installed artifacts their traditional
+# reflex and reflexmin basenames for compatibility with existing consumers.
 foreach(target IN LISTS reflex_library_targets)
   set_target_properties(${target} PROPERTIES OUTPUT_NAME reflex)
 endforeach()
@@ -156,10 +173,8 @@ endforeach()
 
 set_target_properties(Reflex PROPERTIES OUTPUT_NAME reflex)
 
-#
-# Exporting targets section
-#
-
+# Install the generator and public libraries, and record the library targets for
+# the find_package export generated below.
 install(TARGETS Reflex ${reflex_all_library_targets}
   EXPORT ReflexTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -168,20 +183,20 @@ install(TARGETS Reflex ${reflex_all_library_targets}
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
+# Install only the public C++ headers from the source tree.
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/reflex
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   FILES_MATCHING PATTERN "*.h"
 )
 
+# Install imported targets such as Reflex::ReflexLib for downstream CMake users.
 install(EXPORT ReflexTargets
   NAMESPACE Reflex::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/reflex
 )
 
-#
-# Packaging section (find_package support)
-#
-
+# Generate and install the relocatable configuration loaded by
+# find_package(Reflex CONFIG).
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(${PROJECT_SOURCE_DIR}/cmake/Config.cmake.in
@@ -194,13 +209,13 @@ install(FILES
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/reflex
 )
 
-#
-# Packaging section (pkg-config support)
-#
-
+# Preserve pkg-config's variable references in the generated metadata instead
+# of expanding every path at CMake configuration time.
 set(prefix "${CMAKE_INSTALL_PREFIX}")
 set(exec_prefix "\${prefix}")
 
+# GNUInstallDirs permits absolute or prefix-relative directories; normalize
+# both forms into the paths expected by pkg-config files.
 if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
   set(libdir "${CMAKE_INSTALL_LIBDIR}")
 else()
@@ -213,6 +228,8 @@ else()
   set(includedir "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
 endif()
 
+# Generate metadata for both libraries from one template, substituting the
+# appropriate library basename into each output file.
 set(REFLEX_PKGCONFIG_LIBRARY reflex)
 configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
   "${CMAKE_CURRENT_BINARY_DIR}/reflex.pc"
@@ -225,6 +242,7 @@ configure_file(${PROJECT_SOURCE_DIR}/cmake/reflex.pc.in
   @ONLY
 )
 
+# Install both pkg-config descriptions alongside the libraries.
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/reflex.pc"
   "${CMAKE_CURRENT_BINARY_DIR}/reflexmin.pc"
