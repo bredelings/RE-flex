@@ -1,5 +1,5 @@
 # Test whether the compiler accepts each SIMD implementation with its required
-# options.  The resulting variables configure baseline and specialized targets.
+# options.  The resulting variables configure baseline and optimized sources.
 
 # These modules provide compile probes and isolate their temporary flags from
 # the rest of the project configuration.
@@ -113,8 +113,8 @@ set(simd_flags "")
 set(simd_avx2_flags "")
 set(simd_avx512bw_flags "")
 
-# Define only the strongest backend macro.  Baseline targets stay at SSE2 while
-# private AVX object targets receive the flags for their specialized code.
+# Define only the strongest backend macro.  Baseline sources stay at SSE2 while
+# optimized AVX sources receive the flags required by their specialized code.
 if(REFLEX_COMPILER_HAS_AVX512BW)
   list(APPEND simd_definitions HAVE_AVX512BW)
   list(APPEND simd_flags "${reflex_sse2_flag}")

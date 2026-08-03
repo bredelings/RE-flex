@@ -35,6 +35,20 @@ set(libreflex_common_sources
   lib/utf8.cpp
 )
 
+# Use AVX2 flags for AVX2 sources.
+if(REFLEX_COMPILER_HAS_AVX2)
+  set(reflex_avx2_sources lib/matcher_avx2.cpp lib/simd_avx2.cpp)
+  list(APPEND libreflex_common_sources ${reflex_avx2_sources})
+  set_source_files_properties(${reflex_avx2_sources} PROPERTIES COMPILE_OPTIONS "${simd_avx2_flags}")
+endif()
+
+# Use AVX512BW flags for AVX512BW wources.
+if(REFLEX_COMPILER_HAS_AVX512BW)
+  set(reflex_avx512bw_sources lib/matcher_avx512bw.cpp lib/simd_avx512bw.cpp)
+  list(APPEND libreflex_common_sources ${reflex_avx512bw_sources})
+  set_source_files_properties(${reflex_avx512bw_sources} PROPERTIES COMPILE_OPTIONS "${simd_avx512bw_flags}")
+endif()
+
 # The full library adds pattern conversion, POSIX support, and Unicode tables.
 set(libreflex_sources
   ${libreflex_common_sources}
@@ -53,40 +67,7 @@ set(libreflexmin_sources
   ${libreflex_common_sources}
 )
 
-# Collect optional optimized objects for reuse by every library variant.
-set(reflex_simd_objects "")
-
-# These noninstalled PIC objects keep AVX2 instructions out of the baseline
-# sources while allowing all static and shared libraries to reuse one build.
-if(REFLEX_COMPILER_HAS_AVX2)
-  add_library(ReflexAvx2Objects OBJECT
-    lib/matcher_avx2.cpp
-    lib/simd_avx2.cpp
-  )
-  set_target_properties(ReflexAvx2Objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_include_directories(ReflexAvx2Objects PRIVATE ${PROJECT_SOURCE_DIR}/include)
-  target_compile_definitions(ReflexAvx2Objects PRIVATE ${simd_definitions})
-  target_compile_options(ReflexAvx2Objects PRIVATE ${simd_avx2_flags})
-  list(APPEND reflex_simd_objects $<TARGET_OBJECTS:ReflexAvx2Objects>)
-endif()
-
-# AVX512BW needs a distinct compiler option and uses the AVX2 objects above as
-# its runtime fallback, so it is a separate private object target as well.
-if(REFLEX_COMPILER_HAS_AVX512BW)
-  add_library(ReflexAvx512bwObjects OBJECT
-    lib/matcher_avx512bw.cpp
-    lib/simd_avx512bw.cpp
-  )
-  set_target_properties(ReflexAvx512bwObjects PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_include_directories(ReflexAvx512bwObjects PRIVATE ${PROJECT_SOURCE_DIR}/include)
-  target_compile_definitions(ReflexAvx512bwObjects PRIVATE ${simd_definitions})
-  target_compile_options(ReflexAvx512bwObjects PRIVATE ${simd_avx512bw_flags})
-  list(APPEND reflex_simd_objects $<TARGET_OBJECTS:ReflexAvx512bwObjects>)
-endif()
-
-# Define the available static and shared library targets for this toolchain.
-# The public headers do not declare symbols with dllexport/dllimport, so an
-# MSVC-style toolchain can only produce usable static libraries at present.
+# Only build static libs for MSVC because the public headers do not declare symbols with dllexport/dllimport.
 if(REFLEX_MSVC_TOOLCHAIN)
   add_library(ReflexLib STATIC)
   add_library(ReflexMinLib STATIC)
@@ -103,12 +84,12 @@ endif()
 
 # Set the source files contained in each full-library target.
 foreach(target IN LISTS reflex_library_targets)
-  target_sources(${target} PRIVATE ${libreflex_sources} ${reflex_simd_objects})
+  target_sources(${target} PRIVATE ${libreflex_sources})
 endforeach()
 
 # Set the smaller source set contained in each minimal-library target.
 foreach(target IN LISTS reflexmin_library_targets)
-  target_sources(${target} PRIVATE ${libreflexmin_sources} ${reflex_simd_objects})
+  target_sources(${target} PRIVATE ${libreflexmin_sources})
 endforeach()
 
 # Gather all library targets so their common build settings remain identical.
