@@ -7,6 +7,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 set(CMAKE_CXX_STANDARD 11)
 
 include(GNUInstallDirs)
+include(CTest)
 
 # Clang-cl uses MSVC command-line and binary interfaces despite having a
 # different compiler ID.  Treat both toolchains alike when selecting targets.
@@ -132,6 +133,18 @@ else()
 endif()
 target_compile_definitions(Reflex PRIVATE ${simd_definitions})
 target_compile_options(Reflex PRIVATE ${simd_flags})
+
+if(BUILD_TESTING)
+  add_executable(rtest tests/rtest.cpp)
+  if(TARGET ReflexLibStatic)
+    target_link_libraries(rtest PRIVATE ReflexLibStatic)
+  else()
+    # MSVC-style builds expose ReflexLib itself as the static library because
+    # the public headers do not provide the exports required by a usable DLL.
+    target_link_libraries(rtest PRIVATE ReflexLib)
+  endif()
+  add_test(NAME rtest COMMAND rtest)
+endif()
 
 foreach(target IN LISTS reflex_library_targets)
   set_target_properties(${target} PROPERTIES OUTPUT_NAME reflex)
