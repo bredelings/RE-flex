@@ -198,19 +198,25 @@ install(FILES
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/reflex
 )
 
-# Preserve pkg-config's variable references in the generated metadata instead
-# of expanding every path at CMake configuration time.
-set(prefix "${CMAKE_INSTALL_PREFIX}")
-set(exec_prefix "\${prefix}")
-
-# GNUInstallDirs permits absolute or prefix-relative directories; normalize
-# both forms into the paths expected by pkg-config files.
+# Make relative installations relocatable by deriving their prefix from the
+# installed .pc file.  Absolute library destinations retain their fixed paths.
 if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+  set(prefix "${CMAKE_INSTALL_PREFIX}")
+  set(exec_prefix "\${prefix}")
   set(libdir "${CMAKE_INSTALL_LIBDIR}")
 else()
+  # Anchor both inputs in the native build directory because RELATIVE_PATH
+  # requires full paths; only their relative structure enters the .pc file.
+  file(RELATIVE_PATH reflex_pc_prefix_relative
+    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+    "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  set(prefix "\${pcfiledir}/${reflex_pc_prefix_relative}")
+  set(exec_prefix "\${prefix}")
   set(libdir "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
+# GNUInstallDirs also permits the header destination to be absolute.
 if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
   set(includedir "${CMAKE_INSTALL_INCLUDEDIR}")
 else()
