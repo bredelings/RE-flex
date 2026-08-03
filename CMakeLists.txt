@@ -142,11 +142,6 @@ else()
   target_link_libraries(Reflex PRIVATE ReflexLib)
 endif()
 
-# The generator includes SIMD-aware public headers, so use the same baseline
-# definitions and compiler options as the library implementation.
-target_compile_definitions(Reflex PRIVATE ${simd_definitions})
-target_compile_options(Reflex PRIVATE ${simd_flags})
-
 # CTest defines BUILD_TESTING; when enabled, build and register the same rtest
 # regression executable used by the Autotools build.
 if(BUILD_TESTING)
